@@ -5,3 +5,7 @@ __pycache__/
 
 #C/C++
 *.so
+
+#Config Files
+*.txt
+*.csv
