@@ -1,19 +1,26 @@
-import csv, argparse, ipaddress, socket, sys, pathlib, os, tabulate
+import csv, argparse, ipaddress, socket, sys, pathlib, os, tabulate, pyfiglet
+from concurrent import futures
+from itertools import repeat
 
 PORTS = "services.csv"
 
 def main():
-    open = []
+    open_ports = []
     args = parse()
+    banner = pyfiglet.figlet_format("Recon-Tool", font = "doom")
+    print(banner)
     ports = load_ports(args.file)
     target_ip = validate_target(args.target)
-    for port in ports:
-        r = scan_port((target_ip, port))
-        if r == 0:
-            x = {"port" : port}
-            y = ports.get(port, {'service': 'Unknown', 'severity' : 'N/A', 'description' : 'No data available'})
-            open.append(x | y)
-    print(tabulate.tabulate(open, headers = "keys", tablefmt = "grid"))
+    with futures.ThreadPoolExecutor() as executor:
+        iterator = zip(repeat(target_ip), ports.keys())
+        results = executor.map(scan_port, iterator)
+        found_ports = zip(ports.keys(), results)
+        for port_num, r in found_ports:
+            if r == 0:
+                x = {"port" : port_num}
+                y = ports.get(port_num)
+                open_ports.append(x | y)
+    print(tabulate.tabulate(open_ports, headers = "keys", tablefmt = "grid"))
 
 def parse():
     parser = argparse.ArgumentParser(
@@ -60,7 +67,7 @@ def scan_port(ipandport: tuple):
         socket.AF_INET,
         socket.SOCK_STREAM
     )
-    socket.setdefaulttimeout(1)
+    s.settimeout(1)
     result = s.connect_ex(ipandport)
     s.close()
     return result
