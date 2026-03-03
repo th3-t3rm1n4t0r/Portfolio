@@ -1,27 +1,61 @@
-import csv, argparse, ipaddress, socket, sys, pathlib, os, tabulate, pyfiglet
+import csv, argparse, ipaddress, socket, pathlib, os, time, sys
 from concurrent import futures
 from itertools import repeat
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.progress import Progress
 
 PORTS = "services.csv"
+console = Console()
 
 def main():
     open_ports = []
     args = parse()
-    banner = pyfiglet.figlet_format("Recon-Tool", font = "doom")
-    print(banner)
     ports = load_ports(args.file)
     target_ip = validate_target(args.target)
-    with futures.ThreadPoolExecutor() as executor:
-        iterator = zip(repeat(target_ip), ports.keys())
-        results = executor.map(scan_port, iterator)
-        found_ports = zip(ports.keys(), results)
-        for port_num, r in found_ports:
-            if r == 0:
-                x = {"port" : port_num}
-                y = ports.get(port_num)
-                open_ports.append(x | y)
-    print(tabulate.tabulate(open_ports, headers = "keys", tablefmt = "grid"))
 
+    console.print(Panel("[magenta]Recon-Tool v1.0[magenta]",
+                            subtitle = "Made by Abhishek Karmakar"))
+    time.sleep(0.02)
+    try:
+        with futures.ThreadPoolExecutor() as executor:
+            iterator = zip(repeat(target_ip), ports.keys())
+            results = executor.map(scan_port, iterator)
+            found_ports = zip(ports.keys(), results)
+            for port_num, r in found_ports:
+                if r == 0:
+                    x = {"port" : port_num}
+                    y = ports.get(port_num)
+                    open_ports.append(x | y)
+    except KeyboardInterrupt:
+        console.print("\n[red]Scan aborted by user[/red]")
+        sys.exit(1)
+    else:
+        table = Table(title = "Open Ports on Target", title_justify = "center")
+        table.add_column("Port")
+        table.add_column("Service")
+        table.add_column("Severity")
+        table.add_column("Description")
+        for item in open_ports:
+            if item["severity"] == "Low":
+                sev_color = "green"
+            elif item["severity"] == "Medium":
+                sev_color = "yellow"
+            elif item["severity"] == "High":
+                sev_color = "red"
+            else:
+                sev_color = "bold red"
+            table.add_row(str(item['port']),
+                          item['service'],
+                          f"[{sev_color}]{item['severity']}[/{sev_color}]",
+                          item['description'])
+
+    console.print(f"\n[green]Target[/green]: {target_ip}")
+    console.print("[cyan]Scanning targets.... Please wait[/cyan]")
+    console.print(table)
+
+        
 def parse():
     parser = argparse.ArgumentParser(
         description = """Scan for open ports for the given IP Address or URL""",
@@ -40,7 +74,8 @@ def parse():
 def load_ports(data):
     ports = {}
     if not os.path.isfile(data):
-        sys.exit("Services database not found. Ensure 'services.csv' is in the current directory")
+        console.print("[red]Services database not found. Ensure [bold]'services.csv'[/bold] is in the current directory[/red]")
+        sys.exit(1)
     with open(data) as file:
         reader = csv.DictReader(file)
         for row in reader:
@@ -60,7 +95,8 @@ def validate_target(address):
             ip = socket.gethostbyname(address)
             return ip
         except socket.gaierror:
-            sys.exit("Could not resolve hostname")
+            console.print("[red]Could not resolve hostname[/red]")
+            sys.exit(1)
 
 def scan_port(ipandport: tuple):
     s = socket.socket(
